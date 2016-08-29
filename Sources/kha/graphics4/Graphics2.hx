@@ -7,14 +7,11 @@ import kha.FastFloat;
 import kha.Font;
 import kha.graphics2.ImageScaleQuality;
 import kha.Image;
-import kha.graphics4.BlendingOperation;
 import kha.graphics4.ConstantLocation;
-import kha.graphics4.CullMode;
 import kha.graphics4.IndexBuffer;
 import kha.graphics4.MipMapFilter;
 import kha.graphics4.TextureAddressing;
 import kha.graphics4.TextureFilter;
-import kha.graphics4.TextureFormat;
 import kha.graphics4.TextureUnit;
 import kha.graphics4.Usage;
 import kha.graphics4.VertexBuffer;
@@ -23,11 +20,10 @@ import kha.graphics4.VertexStructure;
 import kha.math.FastMatrix3;
 import kha.math.FastMatrix4;
 import kha.math.FastVector2;
-import kha.math.Matrix3;
-import kha.math.Matrix4;
-import kha.math.Vector2;
 import kha.Shaders;
 import kha.simd.Float32x4;
+import kha.graphics2.Primitive;
+import kha.graphics2.Style;
 
 class ImageShaderPainter {
 	private var projectionMatrix: FastMatrix4;
@@ -269,17 +265,15 @@ class ColoredShaderPainter {
 	private static var structure: VertexStructure = null;
 	private var projectionLocation: ConstantLocation;
 	
-	private static var bufferSize: Int = 100;
-	private var bufferIndex: Int;
-	private var rectVertexBuffer: VertexBuffer;
-    private var rectVertices: Float32Array;
+	private static var maxVertexSize: Int = 1024;
+
+	private var vertexBuffer: VertexBuffer;
+	private var vertexIndex: Int;
+    private var vertices: Float32Array;
+
 	private var indexBuffer: IndexBuffer;
-	
-	private static var triangleBufferSize: Int = 100;
-	private var triangleBufferIndex: Int;
-	private var triangleVertexBuffer: VertexBuffer;
-    private var triangleVertices: Float32Array;
-	private var triangleIndexBuffer: IndexBuffer;
+	private var indexIndex: Int;
+	private var indices: Array<Int>;
 	
 	private var g: Graphics;
 	private var myPipeline: PipelineState = null;
@@ -290,8 +284,8 @@ class ColoredShaderPainter {
 	
 	public function new(g4: Graphics) {
 		this.g = g4;
-		bufferIndex = 0;
-		triangleBufferIndex = 0;
+		indexIndex = 0;
+		vertexIndex = 0;
 		initShaders();
 		initBuffers();
 		projectionLocation = shaderPipeline.getConstantLocation("projectionMatrix");
@@ -336,193 +330,87 @@ class ColoredShaderPainter {
 	}
 	
 	function initBuffers(): Void {
-		rectVertexBuffer = new VertexBuffer(bufferSize * 4, structure, Usage.DynamicUsage);
-		rectVertices = rectVertexBuffer.lock();
+		vertexBuffer = new VertexBuffer(maxVertexSize, structure, Usage.DynamicUsage);
+		vertices = vertexBuffer.lock();
 		
-		indexBuffer = new IndexBuffer(bufferSize * 3 * 2, Usage.StaticUsage);
-		var indices = indexBuffer.lock();
-		for (i in 0...bufferSize) {
-			indices[i * 3 * 2 + 0] = i * 4 + 0;
-			indices[i * 3 * 2 + 1] = i * 4 + 1;
-			indices[i * 3 * 2 + 2] = i * 4 + 2;
-			indices[i * 3 * 2 + 3] = i * 4 + 0;
-			indices[i * 3 * 2 + 4] = i * 4 + 2;
-			indices[i * 3 * 2 + 5] = i * 4 + 3;
-		}
+		indexBuffer = new IndexBuffer(maxVertexSize, Usage.StaticUsage);
+		indices = indexBuffer.lock();
+	}
+
+	public function addVertex(x: Float, y: Float, color: Color, transform: FastMatrix3): Void {
+		var baseIndex = vertexIndex * structure.dataSize();
+
+		var p = transform.multvec(new FastVector2(x, y));
+
+		vertices.set(baseIndex + 0, p.x);
+		vertices.set(baseIndex + 1, p.y);
+		vertices.set(baseIndex + 2, -5.0);
+		vertices.set(baseIndex + 3, color.R);
+		vertices.set(baseIndex + 4, color.G);
+		vertices.set(baseIndex + 5, color.B);
+		vertices.set(baseIndex + 6, color.A);
+
+		++vertexIndex;
+	}
+
+	public inline function addIndex(index: Int): Void {
+		indices[indexIndex] = index;
+		++indexIndex;
+	}
+
+	public function draw() {
+		vertexBuffer.unlock();
 		indexBuffer.unlock();
-		
-		triangleVertexBuffer = new VertexBuffer(triangleBufferSize * 3, structure, Usage.DynamicUsage);
-		triangleVertices = triangleVertexBuffer.lock();
-		
-		triangleIndexBuffer = new IndexBuffer(triangleBufferSize * 3, Usage.StaticUsage);
-		var triIndices = triangleIndexBuffer.lock();
-		for (i in 0...bufferSize) {
-			triIndices[i * 3 + 0] = i * 3 + 0;
-			triIndices[i * 3 + 1] = i * 3 + 1;
-			triIndices[i * 3 + 2] = i * 3 + 2;
-		}
-		triangleIndexBuffer.unlock();
-	}
-	
-	public function setRectVertices(
-		bottomleftx: Float, bottomlefty: Float,
-		topleftx: Float, toplefty: Float,
-		toprightx: Float, toprighty: Float,
-		bottomrightx: Float, bottomrighty: Float): Void {
-		var baseIndex: Int = bufferIndex * 7 * 4;
-		rectVertices.set(baseIndex +  0, bottomleftx);
-		rectVertices.set(baseIndex +  1, bottomlefty);
-		rectVertices.set(baseIndex +  2, -5.0);
-		
-		rectVertices.set(baseIndex +  7, topleftx);
-		rectVertices.set(baseIndex +  8, toplefty);
-		rectVertices.set(baseIndex +  9, -5.0);
-		
-		rectVertices.set(baseIndex + 14, toprightx);
-		rectVertices.set(baseIndex + 15, toprighty);
-		rectVertices.set(baseIndex + 16, -5.0);
-		
-		rectVertices.set(baseIndex + 21, bottomrightx);
-		rectVertices.set(baseIndex + 22, bottomrighty);
-		rectVertices.set(baseIndex + 23, -5.0);
-	}
-	
-	public function setRectColors(opacity: FastFloat, color: Color): Void {
-		var baseIndex: Int = bufferIndex * 7 * 4;
-		var a: FastFloat = opacity * color.A;
-		rectVertices.set(baseIndex +  3, color.R);
-		rectVertices.set(baseIndex +  4, color.G);
-		rectVertices.set(baseIndex +  5, color.B);
-		rectVertices.set(baseIndex +  6, a);
-		
-		rectVertices.set(baseIndex + 10, color.R);
-		rectVertices.set(baseIndex + 11, color.G);
-		rectVertices.set(baseIndex + 12, color.B);
-		rectVertices.set(baseIndex + 13, a);
-		
-		rectVertices.set(baseIndex + 17, color.R);
-		rectVertices.set(baseIndex + 18, color.G);
-		rectVertices.set(baseIndex + 19, color.B);
-		rectVertices.set(baseIndex + 20, a);
-		
-		rectVertices.set(baseIndex + 24, color.R);
-		rectVertices.set(baseIndex + 25, color.G);
-		rectVertices.set(baseIndex + 26, color.B);
-		rectVertices.set(baseIndex + 27, a);
-	}
-	
-	private function setTriVertices(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float): Void {
-		var baseIndex: Int = triangleBufferIndex * 7 * 3;
-		triangleVertices.set(baseIndex +  0, x1);
-		triangleVertices.set(baseIndex +  1, y1);
-		triangleVertices.set(baseIndex +  2, -5.0);
-		
-		triangleVertices.set(baseIndex +  7, x2);
-		triangleVertices.set(baseIndex +  8, y2);
-		triangleVertices.set(baseIndex +  9, -5.0);
-		
-		triangleVertices.set(baseIndex + 14, x3);
-		triangleVertices.set(baseIndex + 15, y3);
-		triangleVertices.set(baseIndex + 16, -5.0);
-	}
-	
-	private function setTriColors(opacity: FastFloat, color: Color): Void {
-		var baseIndex: Int = triangleBufferIndex * 7 * 3;
-		var a: FastFloat = opacity * color.A;
-		triangleVertices.set(baseIndex +  3, color.R);
-		triangleVertices.set(baseIndex +  4, color.G);
-		triangleVertices.set(baseIndex +  5, color.B);
-		triangleVertices.set(baseIndex +  6, a);
-		
-		triangleVertices.set(baseIndex + 10, color.R);
-		triangleVertices.set(baseIndex + 11, color.G);
-		triangleVertices.set(baseIndex + 12, color.B);
-		triangleVertices.set(baseIndex + 13, a);
-		
-		triangleVertices.set(baseIndex + 17, color.R);
-		triangleVertices.set(baseIndex + 18, color.G);
-		triangleVertices.set(baseIndex + 19, color.B);
-		triangleVertices.set(baseIndex + 20, a);
-	}
 
-	private function drawBuffer(trisDone: Bool): Void {
-		if (!trisDone) endTris(true);
-		
-		rectVertexBuffer.unlock();
-		g.setVertexBuffer(rectVertexBuffer);
+		g.setVertexBuffer(vertexBuffer);
 		g.setIndexBuffer(indexBuffer);
+
 		g.setPipeline(pipeline == null ? shaderPipeline : pipeline);
 		g.setMatrix(projectionLocation, projectionMatrix);
-		//if (sourceBlend == BlendingOperation.Undefined || destinationBlend == BlendingOperation.Undefined) {
-		//	g.setBlendingMode(BlendingOperation.SourceAlpha, BlendingOperation.InverseSourceAlpha);
-		//}
-		//else {
-		//	g.setBlendingMode(sourceBlend, destinationBlend);
-		//}
 		
-		g.drawIndexedVertices(0, bufferIndex * 2 * 3);
+		g.drawIndexedVertices(0, indexIndex);
 
-		bufferIndex = 0;
-		rectVertices = rectVertexBuffer.lock();
-	}
-	
-	private function drawTriBuffer(rectsDone: Bool): Void {
-		if (!rectsDone) endRects(true);
-		
-		triangleVertexBuffer.unlock();
-		g.setVertexBuffer(triangleVertexBuffer);
-		g.setIndexBuffer(triangleIndexBuffer);
-		g.setPipeline(pipeline == null ? shaderPipeline : pipeline);
-		g.setMatrix(projectionLocation, projectionMatrix);
-		//if (sourceBlend == BlendingOperation.Undefined || destinationBlend == BlendingOperation.Undefined) {
-		//	g.setBlendingMode(BlendingOperation.SourceAlpha, BlendingOperation.InverseSourceAlpha);
-		//}
-		//else {
-		//	g.setBlendingMode(sourceBlend, destinationBlend);
-		//}
-		
-		g.drawIndexedVertices(0, triangleBufferIndex * 3);
+		indexIndex = 0;
+		vertexIndex = 0;
 
-		triangleBufferIndex = 0;
-		triangleVertices = triangleVertexBuffer.lock();
+		vertices = vertexBuffer.lock();
+		indices = indexBuffer.lock();
 	}
-	
-	public function fillRect(opacity: FastFloat, color: Color,
-		bottomleftx: Float, bottomlefty: Float,
-		topleftx: Float, toplefty: Float,
-		toprightx: Float, toprighty: Float,
-		bottomrightx: Float, bottomrighty: Float): Void {
-		if (triangleBufferIndex > 0) drawTriBuffer(true); // Flush other buffer for right render order
+
+	public function addQuad(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float, x4: Float, y4: Float, color: Color, transform: FastMatrix3): Void {
+		if (vertexIndex + 4 >= maxVertexSize)
+			draw();
+
+		addIndex(vertexIndex + 0);
+		addIndex(vertexIndex + 1);
+		addIndex(vertexIndex + 2);
+		addIndex(vertexIndex + 0);
+		addIndex(vertexIndex + 2);
+		addIndex(vertexIndex + 3);
+
+		addVertex(x1, y1, color, transform);
+		addVertex(x2, y2, color, transform);
+		addVertex(x3, y3, color, transform);
+		addVertex(x4, y4, color, transform);
+	}
+
+	public function addTriangle(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float, color: Color, transform: FastMatrix3): Void {
+		if (vertexIndex + 3 >= maxVertexSize)
+			draw();
 		
-		if (bufferIndex + 1 >= bufferSize) drawBuffer(false);
-		
-		setRectColors(opacity, color);
-		setRectVertices(bottomleftx, bottomlefty, topleftx, toplefty, toprightx, toprighty, bottomrightx, bottomrighty);
-		++bufferIndex;
+		addIndex(vertexIndex + 0);
+		addIndex(vertexIndex + 1);
+		addIndex(vertexIndex + 2);
+
+		addVertex(x1, y1, color, transform);
+		addVertex(x2, y2, color, transform);
+		addVertex(x3, y3, color, transform);
 	}
-	
-	public function fillTriangle(opacity: FastFloat, color: Color, x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
-		if (bufferIndex > 0) drawBuffer(true); // Flush other buffer for right render order
-		
-		if (triangleBufferIndex + 1 >= triangleBufferSize) drawTriBuffer(false);
-		
-		setTriColors(opacity, color);
-		setTriVertices(x1, y1, x2, y2, x3, y3);
-		++triangleBufferIndex;
-	}
-	
-	public inline function endTris(rectsDone: Bool): Void {
-		if (triangleBufferIndex > 0) drawTriBuffer(rectsDone);
-	}
-	
-	public inline function endRects(trisDone: Bool): Void {
-		if (bufferIndex > 0) drawBuffer(trisDone);
-	}
-	
+
 	public inline function end(): Void {
-		endTris(false);
-		endRects(false);
+		draw();
 	}
+
 }
 
 #if cpp
@@ -802,13 +690,12 @@ class Graphics2 extends kha.graphics2.Graphics {
 
 	public function new(canvas: Canvas) {
 		super();
-		color = Color.White;
+
 		this.canvas = canvas;
 		g = canvas.g4;
 		imagePainter = new ImageShaderPainter(g);
 		coloredPainter = new ColoredShaderPainter(g);
 		textPainter = new TextShaderPainter(g);
-		textPainter.fontSize = fontSize;
 		setProjection();
 		
 		if (videoPipeline == null) {
@@ -859,24 +746,28 @@ class Graphics2 extends kha.graphics2.Graphics {
 	}
 	
 	#if cpp
-	public override function drawImage(img: kha.Image, x: FastFloat, y: FastFloat): Void {
+	public override function image(img: kha.Image, x: FastFloat, y: FastFloat, ?style: Style): Void {
 		coloredPainter.end();
 		textPainter.end();
+
+		if (style == null)
+			style = this.style;
+
 		var xw: FastFloat = x + img.width;
 		var yh: FastFloat = y + img.height;
 		
 		var xx = Float32x4.loadFast(x, x, xw, xw);
 		var yy = Float32x4.loadFast(yh, y, y, yh);
 		
-		var _00 = Float32x4.loadAllFast(transformation._00);
-		var _01 = Float32x4.loadAllFast(transformation._01);
-		var _02 = Float32x4.loadAllFast(transformation._02);
-		var _10 = Float32x4.loadAllFast(transformation._10);
-		var _11 = Float32x4.loadAllFast(transformation._11);
-		var _12 = Float32x4.loadAllFast(transformation._12);
-		var _20 = Float32x4.loadAllFast(transformation._20);
-		var _21 = Float32x4.loadAllFast(transformation._21);
-		var _22 = Float32x4.loadAllFast(transformation._22);
+		var _00 = Float32x4.loadAllFast(transform._00);
+		var _01 = Float32x4.loadAllFast(transform._01);
+		var _02 = Float32x4.loadAllFast(transform._02);
+		var _10 = Float32x4.loadAllFast(transform._10);
+		var _11 = Float32x4.loadAllFast(transform._11);
+		var _12 = Float32x4.loadAllFast(transform._12);
+		var _20 = Float32x4.loadAllFast(transform._20);
+		var _21 = Float32x4.loadAllFast(transform._21);
+		var _22 = Float32x4.loadAllFast(transform._22);
 		
 		// matrix multiply
 		var w = Float32x4.add(Float32x4.add(Float32x4.mul(_02, xx), Float32x4.mul(_12, yy)), _22);
@@ -884,128 +775,175 @@ class Graphics2 extends kha.graphics2.Graphics {
 		var py = Float32x4.div(Float32x4.add(Float32x4.add(Float32x4.mul(_01, xx), Float32x4.mul(_11, yy)), _21), w);
 		
 		imagePainter.drawImage(img, Float32x4.get(px, 0), Float32x4.get(py, 0), Float32x4.get(px, 1), Float32x4.get(py, 1),
-			Float32x4.get(px, 2), Float32x4.get(py, 2), Float32x4.get(px, 3), Float32x4.get(py, 3), opacity, this.color);
+			Float32x4.get(px, 2), Float32x4.get(py, 2), Float32x4.get(px, 3), Float32x4.get(py, 3), style.fillColor.A, style.fillColor);
 	}
 	#else
-	public override function drawImage(img: kha.Image, x: FastFloat, y: FastFloat): Void {
+	public override function image(image: kha.Image, x: FastFloat, y: FastFloat, ?style: Style): Void {
 		coloredPainter.end();
 		textPainter.end();
-		var xw: FastFloat = x + img.width;
-		var yh: FastFloat = y + img.height;
-		var p1 = transformation.multvec(new FastVector2(x, yh));
-		var p2 = transformation.multvec(new FastVector2(x, y));
-		var p3 = transformation.multvec(new FastVector2(xw, y));
-		var p4 = transformation.multvec(new FastVector2(xw, yh));
-		imagePainter.drawImage(img, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y, opacity, this.color);
+
+		if (style == null)
+			style = this.style;
+		
+		var xw: FastFloat = x + image.width;
+		var yh: FastFloat = y + image.height;
+		var p1 = transform.multvec(new FastVector2(x, yh));
+		var p2 = transform.multvec(new FastVector2(x, y));
+		var p3 = transform.multvec(new FastVector2(xw, y));
+		var p4 = transform.multvec(new FastVector2(xw, yh));
+		imagePainter.drawImage(image, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y, style.fillColor.A, style.fillColor);
 	}
 	#end
 	
-	public override function drawScaledSubImage(img: kha.Image, sx: FastFloat, sy: FastFloat, sw: FastFloat, sh: FastFloat, dx: FastFloat, dy: FastFloat, dw: FastFloat, dh: FastFloat): Void {
+	public override function scaledSubImage(image: kha.Image, x: FastFloat, y: FastFloat, left: FastFloat, top: FastFloat, width: FastFloat, height: FastFloat, finalWidth: FastFloat, finalHeight: FastFloat, ?style: Style): Void {
 		coloredPainter.end();
 		textPainter.end();
-		var p1 = transformation.multvec(new FastVector2(dx, dy + dh));
-		var p2 = transformation.multvec(new FastVector2(dx, dy));
-		var p3 = transformation.multvec(new FastVector2(dx + dw, dy));
-		var p4 = transformation.multvec(new FastVector2(dx + dw, dy + dh));
-		imagePainter.drawImage2(img, sx, sy, sw, sh, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y, opacity, this.color);
+
+		if (style == null)
+			style = this.style;
+
+		var p1 = transform.multvec(new FastVector2(x, y + finalHeight));
+		var p2 = transform.multvec(new FastVector2(x, y));
+		var p3 = transform.multvec(new FastVector2(x + finalWidth, y));
+		var p4 = transform.multvec(new FastVector2(x + finalWidth, y + finalHeight));
+		imagePainter.drawImage2(image, left, top, width, height, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y, style.fillColor.A, style.fillColor);
 	}
-	
-	override public function get_color(): Color {
-		return myColor;
-	}
-	
-	override public function set_color(color: Color): Color {
-		return myColor = color;
-	}
-	
-	public override function drawRect(x: Float, y: Float, width: Float, height: Float, strength: Float = 1.0): Void {
+
+	override function quad(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float, x4: Float, y4: Float, ?style:Style): Void {
 		imagePainter.end();
 		textPainter.end();
 		
-		var p1 = transformation.multvec(new FastVector2(x - strength / 2, y + strength / 2)); //bottom-left
-		var p2 = transformation.multvec(new FastVector2(x - strength / 2, y - strength / 2)); //top-left
-		var p3 = transformation.multvec(new FastVector2(x + width + strength / 2, y - strength / 2)); //top-right
-		var p4 = transformation.multvec(new FastVector2(x + width + strength / 2, y + strength / 2)); //bottom-right
-		coloredPainter.fillRect(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y); // top
-		
-		p1 = transformation.multvec(new FastVector2(x - strength / 2, y + height + strength / 2));
-		p3 = transformation.multvec(new FastVector2(x + strength / 2, y - strength / 2));
-		p4 = transformation.multvec(new FastVector2(x + strength / 2, y + height + strength / 2));
-		coloredPainter.fillRect(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y); // left
-		
-		p2 = transformation.multvec(new FastVector2(x - strength / 2, y + height - strength / 2));
-		p3 = transformation.multvec(new FastVector2(x + width + strength / 2, y + height - strength / 2));
-		p4 = transformation.multvec(new FastVector2(x + width + strength / 2, y + height + strength / 2));
-		coloredPainter.fillRect(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y); // bottom
-		
-		p1 = transformation.multvec(new FastVector2(x + width - strength / 2, y + height + strength / 2));
-		p2 = transformation.multvec(new FastVector2(x + width - strength / 2, y - strength / 2));
-		p3 = transformation.multvec(new FastVector2(x + width + strength / 2, y - strength / 2));
-		p4 = transformation.multvec(new FastVector2(x + width + strength / 2, y + height + strength / 2));
-		coloredPainter.fillRect(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y); // right
+		if (style == null)
+			style = this.style;
+
+		if (style.fill) {
+			coloredPainter.addQuad(x1, y1, x2, y2, x3, y3, x4, y4, style.fillColor, transform);
+		}
+		if (style.stroke) {
+			// TODO: Adjust line for corners
+			line(x1, y1, x2, y2, style);
+			line(x2, y2, x3, y3, style);
+			line(x3, y3, x4, y4, style);
+			line(x4, y4, x1, y1, style);
+		}
 	}
-	
-	public override function fillRect(x: Float, y: Float, width: Float, height: Float): Void {
+
+	override public function rect(x: Float, y: Float, width: Float, height: Float, ?style:Style): Void {
 		imagePainter.end();
 		textPainter.end();
-		
-		var p1 = transformation.multvec(new FastVector2(x, y + height));
-		var p2 = transformation.multvec(new FastVector2(x, y));
-		var p3 = transformation.multvec(new FastVector2(x + width, y));
-		var p4 = transformation.multvec(new FastVector2(x + width, y + height));
-		coloredPainter.fillRect(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y);
+
+		quad(x, y, x + width, y, x + width, y + height, x, y + height, style);
 	}
 
-	public override function drawString(text: String, x: Float, y: Float): Void {
-		imagePainter.end();
-		coloredPainter.end();
-		
-		textPainter.drawString(text, opacity, color, x, y, transformation, fontGlyphs);
-	}
-
-	override public function get_font(): Font {
-		return myFont;
-	}
-	
-	override public function set_font(font: Font): Font {
-		textPainter.setFont(font);
-		return myFont = font;
-	}
-	
-	override public function set_fontSize(value: Int): Int {
-		return super.fontSize = textPainter.fontSize = value;
-	}
-
-	public override function drawLine(x1: Float, y1: Float, x2: Float, y2: Float, strength: Float = 1.0): Void {
+	override public function line(x1: Float, y1: Float, x2: Float, y2: Float, ?style:Style): Void {
 		imagePainter.end();
 		textPainter.end();
+
+		if (style == null)
+			style = this.style;
 		
 		var vec: FastVector2;
 		if (y2 == y1) vec = new FastVector2(0, -1);
 		else vec = new FastVector2(1, -(x2 - x1) / (y2 - y1));
-		vec.length = strength;
+		vec.length = style.strokeWeight;
 		var p1 = new FastVector2(x1 + 0.5 * vec.x, y1 + 0.5 * vec.y);
 		var p2 = new FastVector2(x2 + 0.5 * vec.x, y2 + 0.5 * vec.y);
-		var p3 = p1.sub(vec);
-		var p4 = p2.sub(vec);
+		var p3 = p2.sub(vec);
+		var p4 = p1.sub(vec);
 		
-		p1 = transformation.multvec(p1);
-		p2 = transformation.multvec(p2);
-		p3 = transformation.multvec(p3);
-		p4 = transformation.multvec(p4);
-		
-		coloredPainter.fillTriangle(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
-		coloredPainter.fillTriangle(opacity, color, p3.x, p3.y, p2.x, p2.y, p4.x, p4.y);		
+		coloredPainter.addQuad(p1.x, p1.y, p2.x, p2.y, p3.x, p3.y, p4.x, p4.y, style.strokeColor, transform);
 	}
 
-	public override function fillTriangle(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float) {
+	override public function triangle(x1: Float, y1: Float, x2: Float, y2: Float, x3: Float, y3: Float, ?style:Style): Void {
 		imagePainter.end();
 		textPainter.end();
+
+		if (style == null)
+			style = this.style;
+
+		if (style.fill) {
+			coloredPainter.addTriangle(x1, y1, x2, y2, x3, y3, style.fillColor, transform);
+		}
+		if (style.stroke) {
+			// TODO: Adjust line for corners
+			line(x1, y1, x2, y2, style);
+			line(x2, y2, x3, y3, style);
+			line(x3, y3, x1, y1, style);
+		}
+	}
+
+	override public function ellipse(x: Float, y: Float, radiusX: Float, radiusY: Float, ?style:Style): Void {
+		imagePainter.end();
+		textPainter.end();
+
+		if (style == null)
+			style = this.style;
 		
-		var p1 = transformation.multvec(new FastVector2(x1, y1));
-		var p2 = transformation.multvec(new FastVector2(x2, y2));
-		var p3 = transformation.multvec(new FastVector2(x3, y3));
-		coloredPainter.fillTriangle(opacity, color, p1.x, p1.y, p2.x, p2.y, p3.x, p3.y);
+		var theta = (Math.PI * 2.0) / style.circleSegments;
+
+		if (style.fill) {
+			for (i in 0...style.circleSegments) {
+				var angle = theta * i;
+				var x1 = x + (radiusX * Math.cos(angle));
+				var y1 = y + (radiusY * Math.sin(angle));
+
+				var angle = theta * (i + 1);
+				var x2 = x + (radiusX * Math.cos(angle));
+				var y2 = y + (radiusY * Math.sin(angle));
+
+				coloredPainter.addTriangle(x1, y1, x2, y2, x, y, style.fillColor, transform);
+			}
+		}
+		if (style.stroke) {
+			beginShape(Lines, style);
+
+			for (i in 0...style.circleSegments) {
+				var angle = theta * i;
+				var xPos = x + (radiusX * Math.cos(angle));
+				var yPos = y + (radiusY * Math.sin(angle));
+				vertex(xPos, yPos);
+			}
+
+			endShape(true);
+		}
+	}
+
+	override public function endShape(close:Bool): Void {
+		switch (primitiveType) {
+			case Triangles:
+				while (shapeVertices.length % 6 != 0) {
+					vertex(shapeVertices[0], shapeVertices[1]);
+				}
+				
+				var i = 0;
+				while (i <= shapeVertices.length) {
+					coloredPainter.addTriangle(shapeVertices[i], shapeVertices[i+1], shapeVertices[i+2], shapeVertices[i+3], shapeVertices[i+4], shapeVertices[i+5], shapeStyle.fillColor, transform);
+					i += 6;
+				}
+			case Lines:
+				if (close) {
+					vertex(shapeVertices[0], shapeVertices[1]);
+				}
+
+				var i = 0;
+				while (i <= shapeVertices.length - 4) {
+					line(shapeVertices[i], shapeVertices[i+1], shapeVertices[i+2], shapeVertices[i+3], shapeStyle);
+					i += 2;
+				}
+		}
+	}
+
+	public override function text(text: String, x: Float, y: Float, ?style: Style): Void {
+		imagePainter.end();
+		coloredPainter.end();
+
+		if (style == null)
+			style = this.style;
+		
+		textPainter.setFont(style.font);
+		textPainter.fontSize = style.fontSize;
+
+		textPainter.drawString(text, style.fillColor.A, style.fillColor, x, y, transform, style.fontGlyphs);
 	}
 	
 	private var myImageScaleQuality: ImageScaleQuality = ImageScaleQuality.High;
@@ -1069,16 +1007,20 @@ class Graphics2 extends kha.graphics2.Graphics {
 	
 	public override function end(): Void {
 		flush();
+		resetTransform();
 		g.end();
 	}
 	
-	private function drawVideoInternal(video: kha.Video, x: Float, y: Float, width: Float, height: Float): Void {
+	private function drawVideoInternal(video: kha.Video, x: Float, y: Float, width: Float, height: Float, ?style: Style): Void {
 		
 	}
 	
-	override public function drawVideo(video: kha.Video, x: Float, y: Float, width: Float, height: Float): Void {
+	override public function video(video: kha.Video, x: Float, y: Float, width: Float, height: Float, ?style: Style): Void {
+		if (style == null)
+			style = this.style;
+		
 		setPipeline(videoPipeline);
-		drawVideoInternal(video, x, y, width, height);
+		drawVideoInternal(video, x, y, width, height, style);
 		setPipeline(null);
 	}
 }

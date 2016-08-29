@@ -3,6 +3,7 @@ package kha.flash.graphics4;
 import flash.display.BitmapData;
 import flash.geom.Rectangle;
 import kha.Canvas;
+import kha.graphics2.Style;
 import kha.graphics4.DepthStencilFormat;
 import kha.graphics4.Graphics;
 import kha.graphics4.Graphics2;
@@ -18,7 +19,7 @@ class Graphics2 extends kha.graphics4.Graphics2 {
 		videoImage = new Image(canvas.width, canvas.height, TextureFormat.RGBA32, false, DepthStencilFormat.NoDepthAndStencil, false);
 	}
 
-	override public function drawVideoInternal(video: kha.Video, x: Float, y: Float, width: Float, height: Float): Void {
+	override public function drawVideoInternal(video: kha.Video, x: Float, y: Float, width: Float, height: Float, ?style: Style): Void {
 		/*flushBuffers();
 
 		var stageVideo = new flash.media.Video(Std.int(width), Std.int(height));
@@ -53,6 +54,6 @@ class Graphics2 extends kha.graphics4.Graphics2 {
 		videoBitmap.fillRect(new Rectangle(0, 0, width, height), 0xffffff);
 		videoBitmap.draw(stageVideo);
 		videoImage.uploadBitmap(videoBitmap, false);
-		drawScaledSubImage(videoImage, 0, 0, width, height, x, y, width, height);
+		scaledSubImage(videoImage, 0, 0, width, height, x, y, width, height);
 	}
 }
