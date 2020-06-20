@@ -47,7 +47,7 @@ class Image implements Canvas implements Resource {
 		return new Image(-1, rtid, width, height, width, height, format);
 	}
 
-	public static function fromBytes(bytes: Bytes, width: Int, height: Int, format: TextureFormat = null, usage: Usage = null): Image {
+	public static function fromBytes(bytes: Bytes, width: Int, height: Int, format: TextureFormat = null, usage: Usage = null, readable: Bool = null): Image {
 		return null;
 	}
 
@@ -66,7 +66,7 @@ class Image implements Canvas implements Resource {
 	public static function get_nonPow2Supported(): Bool {
 		return true;
 	}
-	
+
 	public static function renderTargetsInvertedY(): Bool {
 		return true;
 	}

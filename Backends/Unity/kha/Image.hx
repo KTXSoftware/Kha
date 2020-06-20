@@ -30,7 +30,7 @@ class Image implements Canvas implements Resource {
 		return new Image(width, height, format == null ? TextureFormat.RGBA32 : format, true);
 	}
 
-	public static function fromBytes(bytes: Bytes, width: Int, height: Int, format: TextureFormat = null, usage: Usage = null): Image {
+	public static function fromBytes(bytes: Bytes, width: Int, height: Int, format: TextureFormat = null, usage: Usage = null, readable: Bool = null): Image {
 		return null;
 	}
 
